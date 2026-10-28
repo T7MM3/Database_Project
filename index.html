@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ตารางอันดับผู้เล่น</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Rubik:wght@400;500;700;800&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --base: #e6ebf2;      /* พื้นเหมือน baseplate */
+    --ink: #1b2330;
+    --paper: #ffffff;
+    --red: #d1362b;
+    --yellow: #f2b705;
+    --blue: #1f5fbf;
+    --muted: #5d6879;
+  }
+  * { box-sizing: border-box; }
+  html { background: var(--base); }
+  body {
+    margin: 0;
+    font-family: "Rubik", system-ui, "Noto Sans Thai", sans-serif;
+    color: var(--ink);
+    background-image: radial-gradient(circle, #d3dae6 2px, transparent 2.5px);
+    background-size: 28px 28px;
+    min-height: 100vh;
+  }
+  main { max-width: 640px; margin: 0 auto; padding: 40px 16px 64px; }
+  h1 { font-size: clamp(30px, 7vw, 44px); font-weight: 800; margin: 0 0 6px; letter-spacing: -0.01em; }
+  .sub { margin: 0 0 28px; color: var(--muted); }
+
+  /* สถิติรวม */
+  .stats { display: flex; gap: 10px; margin-bottom: 36px; }
+  .stat { flex: 1; background: var(--paper); border: 2px solid var(--ink); border-radius: 6px; padding: 12px 14px; }
+  .stat b { display: block; font-size: 26px; font-weight: 700; }
+  .stat span { font-size: 14px; color: var(--muted); }
+
+  /* โพเดียม: อิฐซ้อนกัน สูงตามคะแนน */
+  .podium { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; align-items: end; height: 260px; margin-bottom: 28px; }
+  .slot { display: flex; flex-direction: column; justify-content: flex-end; height: 100%; min-width: 0; }
+  .who { text-align: center; padding: 0 2px 8px; }
+  .who .n { font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .who .s { font-size: 14px; color: var(--muted); }
+  .brick {
+    border: 2px solid var(--ink); border-radius: 6px 6px 0 0;
+    display: flex; align-items: flex-start; justify-content: center;
+    padding-top: 10px; font-size: 32px; font-weight: 800; color: var(--paper);
+    position: relative;
+    transition: height .6s cubic-bezier(.2,.8,.2,1);
+  }
+  /* หมุดอิฐด้านบน */
+  .brick::before {
+    content: ""; position: absolute; top: -10px; left: 50%; width: 36px; height: 8px;
+    transform: translateX(-50%); background: inherit;
+    border: 2px solid var(--ink); border-bottom: 0; border-radius: 4px 4px 0 0;
+  }
+  .p1 .brick { background: var(--yellow); color: var(--ink); }
+  .p2 .brick { background: var(--blue); }
+  .p3 .brick { background: var(--red); }
+
+  /* อันดับ 4 ลงไป */
+  ol.rest { list-style: none; margin: 0; padding: 0; background: var(--paper); border: 2px solid var(--ink); border-radius: 6px; }
+  ol.rest li { display: grid; grid-template-columns: 40px 1fr auto; gap: 8px; align-items: center; padding: 12px 14px; border-bottom: 1px solid #dfe4ec; }
+  ol.rest li:last-child { border-bottom: 0; }
+  ol.rest .rank { font-weight: 700; color: var(--muted); }
+  ol.rest .name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  ol.rest .score { font-weight: 700; }
+
+  .empty { background: var(--paper); border: 2px dashed var(--ink); border-radius: 6px; padding: 28px 18px; text-align: center; color: var(--muted); }
+  .updated { margin-top: 14px; font-size: 13px; color: var(--muted); text-align: right; }
+
+  :focus-visible { outline: 3px solid var(--blue); outline-offset: 2px; }
+  @media (prefers-reduced-motion: reduce) { .brick { transition: none; } }
+</style>
+</head>
+<body>
+<main>
+  <h1>ตารางอันดับผู้เล่น</h1>
+  <p class="sub">คะแนนสูงสุดของแต่ละคน อัปเดตอัตโนมัติจากเกมจริง</p>
+
+  <section class="stats" aria-label="สถิติรวม">
+    <div class="stat"><b id="players">–</b><span>ผู้เล่น</span></div>
+    <div class="stat"><b id="games">–</b><span>รอบที่เล่น</span></div>
+    <div class="stat"><b id="top">–</b><span>คะแนนสูงสุด</span></div>
+  </section>
+
+  <section id="podium" class="podium" aria-label="สามอันดับแรก"></section>
+  <ol id="rest" class="rest"></ol>
+  <div id="empty" class="empty" hidden>ยังไม่มีคะแนน เล่นเกมให้จบรอบ คะแนนจะมาโชว์ที่นี่</div>
+  <div class="updated" id="updated"></div>
+</main>
+
+<script>
+  const fmt = n => Number(n).toLocaleString('th-TH');
+
+  // สร้าง element โดยใช้ textContent เพื่อกัน XSS (ชื่อผู้เล่นมาจากคนภายนอก)
+  function el(tag, cls, text) {
+    const e = document.createElement(tag);
+    if (cls) e.className = cls;
+    if (text !== undefined) e.textContent = text;
+    return e;
+  }
+
+  async function load() {
+    try {
+      const [stats, rows] = await Promise.all([
+        fetch('/api/stats').then(r => r.json()),
+        fetch('/api/leaderboard').then(r => r.json()),
+      ]);
+
+      document.getElementById('players').textContent = fmt(stats.players);
+      document.getElementById('games').textContent = fmt(stats.games);
+      document.getElementById('top').textContent = fmt(stats.top);
+
+      const podium = document.getElementById('podium');
+      const rest = document.getElementById('rest');
+      const empty = document.getElementById('empty');
+      podium.replaceChildren();
+      rest.replaceChildren();
+      empty.hidden = rows.length > 0;
+
+      // ลำดับแสดง: อันดับ 2, 1, 3
+      const order = [1, 0, 2];
+      const max = rows.length ? rows[0].best : 1;
+      order.forEach(i => {
+        const r = rows[i];
+        if (!r) { podium.appendChild(el('div')); return; }
+        const slot = el('div', 'slot p' + (i + 1));
+        const who = el('div', 'who');
+        who.append(el('div', 'n', r.name), el('div', 's', fmt(r.best)));
+        const brick = el('div', 'brick', String(i + 1));
+        brick.style.height = Math.max(22, (r.best / max) * 72) + '%';
+        slot.append(who, brick);
+        podium.appendChild(slot);
+      });
+
+      rows.slice(3).forEach((r, k) => {
+        const li = el('li');
+        li.append(el('span', 'rank', String(k + 4)), el('span', 'name', r.name), el('span', 'score', fmt(r.best)));
+        rest.appendChild(li);
+      });
+
+      document.getElementById('updated').textContent =
+        'อัปเดตล่าสุด ' + new Date().toLocaleTimeString('th-TH');
+    } catch (e) {
+      document.getElementById('updated').textContent = 'โหลดข้อมูลไม่ได้ ลองรีเฟรชหน้าอีกครั้ง';
+    }
+  }
+
+  load();
+  setInterval(load, 10000); // ดึงข้อมูลใหม่ทุก 10 วินาที
+</script>
+</body>
+</html>
